@@ -1,0 +1,15 @@
+name: imgproc
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - pip:
+      - typing-extensions
+  - python=3.10
+  - numpy=1.24
+  - opencv=4.8
+  - numba=0.57
+  - scipy=1.10
+  - simpleitk=2.2
+  - tqdm=4.65
+  - opencv-python
