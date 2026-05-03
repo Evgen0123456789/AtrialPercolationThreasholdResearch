@@ -40,7 +40,7 @@ def _hull_axis(mask: np.ndarray, axis: int, n_jobs: Optional[int] = None) -> np.
 
     n_slices = mask.shape[axis]
     appropriate_indexes = [i for i in range(n_slices) if np.any(np.take(mask, i, axis=axis))]
-    args_list = [np.take(mask, i, axis=axis).copy() for i in appropriate_indexes]
+    args_list = [(np.take(mask, i, axis=axis).copy(), i) for i in appropriate_indexes]
 
     print(f"  Axis {axis}: {len(appropriate_indexes)}/{n_slices} non-empty slices")
 
@@ -48,13 +48,13 @@ def _hull_axis(mask: np.ndarray, axis: int, n_jobs: Optional[int] = None) -> np.
     results = [None] * n_slices
     with Pool(n_jobs) as pool:
         for i, img in tqdm(pool.imap(_process_slice, args_list), total=len(args_list), desc=f'Axis {axis}'):
-            results[i] = img
+            results[i] = img.astype(np.bool_)
 
     for i in range(n_slices):
         if results[i] is None:
             shape = list(mask.shape)
             shape.pop(axis)
-            results[i] = np.zeros(shape, dtype=np.uint8)
+            results[i] = np.zeros(shape, dtype=np.bool_)
 
     return np.stack(results, axis=axis)
 
@@ -67,4 +67,4 @@ def get_convex_hull_intersection(mask: np.ndarray, n_jobs: Optional[int] = None)
     :return: a mask
     """
     hulls = [_hull_axis(mask, i, n_jobs=n_jobs) for i in range(len(mask.shape))]
-    return (np.logical_and(hulls)).astype(np.uint8)
+    return (np.logical_and(*hulls)).astype(np.uint8)
