@@ -70,7 +70,7 @@ def compute_wall_thickness_interior(
     Computes AWT using coupled PDE (Eq. 7-9 from paper).
     D=0 at boundary nodes (already set before calling).
     """
-    print("[PDE] Computing trajectory functions (interior nodes only)...")
+    print("  Computing trajectory functions (interior nodes only)...")
 
     gx, gy, gz = grad
     grad_mag = np.sqrt(gx ** 2 + gy ** 2 + gz ** 2) + 1e-10
@@ -78,9 +78,9 @@ def compute_wall_thickness_interior(
     ty = gy / grad_mag
     tz = gz / grad_mag
 
-    print(f"  [PDE] {len(interior_indices)} interior nodes")
-    print(f"  [PDE] {len(episurface_indices)} interior nodes")
-    print(f"  [PDE] {len(endosurface_indices)} interior nodes")
+    print(f"  {len(interior_indices)} interior nodes")
+    print(f"  {len(episurface_indices)} epicardial nodes")
+    print(f"  {len(endosurface_indices)} endocardial nodes")
 
     # Solve PDE from epicardium (Eq. 12)
     d_epi = np.zeros_like(tx, dtype=np.float64)
@@ -109,22 +109,8 @@ def compute_wall_thickness_interior(
         "[PDE] Median thickness": (np.median(awt_for_stats), "mm"),
         "[PDE] 25th percentile": (np.percentile(awt_for_stats, 25), "mm"),
         "[PDE] 75th percentile": (np.percentile(awt_for_stats, 75), "mm"),
-        "[PDE] 95th percentile": (np.percentile(awt_for_stats, 95), "mm")
+        "[PDE] 95th percentile": (np.percentile(awt_for_stats, 95), "mm"),
+        "[PDE] STD": (np.std(awt_for_stats), "mm")
     }
     del awt_for_stats
-    # # Сохраните гистограмму:
-    # import matplotlib.pyplot as plt
-    # plt.figure(figsize=(10, 4))
-    # plt.subplot(1, 3, 1)
-    # plt.hist(d_epi[d_epi > 0], bins=50)
-    # plt.title('Epicardial distance')
-    # plt.subplot(1, 3, 2)
-    # plt.hist(d_endo[d_endo > 0], bins=50)
-    # plt.title('Endocardial distance')
-    # plt.subplot(1, 3, 3)
-    # plt.hist(awt[awt > 0], bins=50)
-    # plt.title('AWT')
-    # plt.savefig('awt_histogram.png')
-    # print(f"[PDE] Thickness range: {awt.min():.2f} - {awt.max():.2f} mm")
-    # return d_epi, d_endo, awt
     return awt, stats

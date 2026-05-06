@@ -25,7 +25,6 @@ def get_bounding_box(mask: np.ndarray, pad: int):
 
     return (x0, x1), (y0, y1), (z0, z1)
 
-#region Logging
 def plt_save_np_hist(hist, bins, title, xlable, ylable, name):
     centers = (bins[:-1] + bins[1:]) / 2
     plt.figure(figsize=(6, 4))
@@ -358,35 +357,39 @@ def sample_thickness_numba(voxel_indices, awt_field, thickness_out):
     return thickness_out
 
 
-def save_surface_points_optimized(awt_field, epi_indices, endo_indices, spacing, filepath):
-    """
-    Оптимизированная версия: сохраняет РАЗДЕЛЬНО + numba для толщины.
-    """
-    # Эндокард
-    endo_thickness = np.zeros(len(endo_indices), dtype=np.float64)
-    endo_thickness = sample_thickness_numba(endo_indices, awt_field, endo_thickness)
-
-    # Эпикард
-    epi_thickness = np.zeros(len(epi_indices), dtype=np.float64)
-    epi_thickness = sample_thickness_numba(epi_indices, awt_field, epi_thickness)
-
-    # Сохраняем РАЗДЕЛЬНО (с воксельными индексами!)
-    np.savez_compressed(
-        filepath.replace('.npz', '_endo.npz'),
-        voxel_indices=endo_indices,
-        thickness=endo_thickness,
-        spacing=spacing
-    )
+def save_surface_points_optimized(field, indices, spacing, filepath):
+    key_values = np.zeros(len(indices), dtype=np.float64)
+    key_values = sample_thickness_numba(indices, field, key_values)
 
     np.savez_compressed(
-        filepath.replace('.npz', '_epi.npz'),
-        voxel_indices=epi_indices,
-        thickness=epi_thickness,
+        filepath,
+        voxel_indices=indices,
+        thickness=key_values,
         spacing=spacing
     )
+    print(f"  Saved: {filepath} ({len(indices)} voxels)")
 
-    print(f"✓ Saved: {filepath.replace('.npz', '_endo.npz')} ({len(endo_indices)} voxels)")
-    print(f"✓ Saved: {filepath.replace('.npz', '_epi.npz')} ({len(epi_indices)} voxels)")
+def save_points(field: np.ndarray, indices: np.ndarray, spacing, filepath):
+    """
+    Сохраняет указанные точки с толщиной в простой формат.
+    """
+    point_value = field[indices[:, 0], indices[:, 1], indices[:, 2]]
+
+    np.savez_compressed(
+            filepath,
+            points=indices,
+            thickness=point_value,
+            spacing=spacing
+    )
+    print(f"  Saved: {filepath}")
+
+
+def save_mask(mask, spacing, direction, origin, out, name):
+    img = sitk.GetImageFromArray(mask)
+    img.SetSpacing(spacing)
+    img.SetDirection(direction)
+    img.SetOrigin(origin)
+    sitk.WriteImage(img, os.path.join(out, f"{name}.nrrd"))
     
 if __name__=="__main__":
     
@@ -423,8 +426,3 @@ if __name__=="__main__":
     out = sitk.GetImageFromArray(res[:, :, :, 1])
     out.CopyInformation(reff)
     sitk.WriteImage(out, path2animation + "/Kar_morphology.nrrd")
-    # print(list(build_patch_index((256, 512, 512), (16, 16, 16))))
-    # results = []
-    
-    # df_results.to_excel('/home/evgeniy/Рабочий стол/Научная работа/Отчёты/dice_results_wall_with_cover.xlsx', index=False)
-        
