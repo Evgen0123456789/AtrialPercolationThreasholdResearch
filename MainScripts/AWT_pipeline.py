@@ -1,6 +1,7 @@
 import gc
-import multiprocessing
+import os
 import time
+import multiprocessing
 
 import numpy as np
 import SimpleITK as sitk
@@ -19,8 +20,9 @@ def get_beta1(mask: np.ndarray):
     return 2 - (len(verts) - len(faces) / 2)
 
 
-def process(path, out):
+def process(path: str, name: str, out: str):
     print("\n[0/7] Loading...")
+    path = os.path.join(path, name)
     N: int = 1
     while N < 100:
         try:
@@ -44,7 +46,7 @@ def process(path, out):
     print(f"  {N} requests to read were asked.")
     print_volume(wall_mask, original_spacing, "wall")
     print(f"  Spacing: {original_spacing} mm\n  Original shape: {original_shape}")
-    out = os.path.join(out, os.path.split(path)[-1].split(".nrrd")[0])
+    out = os.path.join(out, name.split(".nrrd")[0])
     if not os.path.exists(out): os.mkdir(out)
 
     print("\n[1/7] Computing bounding box...")
@@ -74,7 +76,7 @@ def process(path, out):
     print("\n[4/7] Upscaling grid (×4)...")
     # We include elements' vertices, faces and edges centers into grid for exact calculation of surfaces.
     first_factor = 4    # Divide every block onto 4 elements along each side.
-    another_factor = 2  # Unite every 2 blocks along each side into one unit.
+    second_factor = 2  # Unite every 2 blocks along each side into one unit.
     wall_fine = upscale_grid(reduced_wall_mask, factor=first_factor)
     print(f"  Independent paths through the wall:  {get_beta1(wall_fine)}")
     epi_fine = upscale_grid(epi_coarse, factor=first_factor)
@@ -86,9 +88,9 @@ def process(path, out):
     print("\n[5/7] Creating field and interior indices (strip + downscale)...")
     wall_field, epi_field, endo_field, interior_indices, episurface_indices, endosurface_indices =\
         create_field_and_interior_indices(
-            wall_fine, epi_fine, endo_fine, factor=another_factor
+            wall_fine, epi_fine, endo_fine, factor=second_factor
     )
-    field_spacing = tuple(another_factor * s for s in fine_spacing)
+    field_spacing = (second_factor * fine_spacing[0], second_factor * fine_spacing[1], second_factor * fine_spacing[2])
     del wall_fine, epi_fine, endo_fine
 
     print("\n[6/7] Solving Laplace equation (interior nodes only)...")
@@ -96,18 +98,19 @@ def process(path, out):
     u_field[epi_field > 0] = 100.0  # Epicardium (Paper: 100)
     u_field[endo_field > 0] = 300.0  # Endocardium (Paper: 300)
     u_field[endo_field * epi_field > 0] = 200.0  # Boundary assumption
-    u_field, grad_field, stats_laplace = solve_laplace_interior(
+    u_field, grad_field, _ = solve_laplace_interior(
         u_field,
         interior_indices,
         field_spacing,
         max_iter=5000,
         tol=1e-6
     )
+    u_field[u_field == 0] = np.nan
     save_mask(u_field, original_spacing, direction, origin, out, "Dirichlet_solution.nrrd")
-    del u_field
+    del u_field, epi_field, endo_field
     gc.collect()
-    print("\n[7/7] Computing wall thickness (Coupled PDE)...")
 
+    print("\n[7/7] Computing wall thickness (Coupled PDE)...")
     awt_field, stats = compute_wall_thickness_interior(
         grad_field,
         interior_indices,
@@ -115,24 +118,34 @@ def process(path, out):
         endosurface_indices,
         field_spacing
     )
-
     save_mask(awt_field, original_spacing, direction, origin, out, "AWT.nrrd")
     for k, v in stats.items():
         print(k, ":", v[0], v[1])
-    gc.collect()
     del awt_field, grad_field, interior_indices, episurface_indices, endosurface_indices
+    gc.collect()
 
 if __name__ == '__main__':
-    import os
     import argparse
 
     parser = argparse.ArgumentParser(description="Программа для вычисления получения предсердия. "
                                                  "Так же дополнительно вычисляет маску пула крови и "
                                                  "решение задачи Дирихле.")
 
-    parser.add_argument("path", help="Расположение файла")
-    parser.add_argument("name", help="Имя образца")
-    parser.add_argument("out", help="Папка для сохранения", default="../Results")
+    parser.add_argument("-p", "--path", required=True, type=str, help="Расположение файла")
+    parser.add_argument("-n", "--names", nargs="*", type=str, help="Имя образца", default=[])
+    parser.add_argument("-o", "--out", type=str, help="Папка для сохранения", default="../Results")
     args = parser.parse_args()
-    process(os.path.join(str(args.path), str(args.name)), args.out)
-    gc.collect()
+
+    if args.names:
+        names = [n for n in args.names
+                 if n.endswith(".nrrd") and os.path.isfile(os.path.join(args.path, n))]
+    else:
+        names = [f for f in os.listdir(args.path)
+                 if f.endswith(".nrrd") and os.path.isfile(os.path.join(args.path, f))]
+    if not names:
+        print("Предупреждение: файлы .nrrd не найдены.")
+        exit(1)
+
+    for name in names:
+        process(args.path, name, args.out)
+        gc.collect()
