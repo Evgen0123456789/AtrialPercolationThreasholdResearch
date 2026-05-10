@@ -1,37 +1,19 @@
+import json
+from datetime import datetime
+from scipy import stats
+
 import numpy as np
 import SimpleITK as sitk
 import matplotlib.pyplot as plt
-from scipy import stats
-from WorkTools import compute_zone_dice
-import json
-from datetime import datetime
+
+from Tools.WorkTools import Dice, compute_zone_dice, bootstrap_ci
 
 # Пути к данным
 ref = "/home/evgeniy/Рабочий стол/Научная работа/Данные/Датасеты/Dataset001_LA_Wall/labelsTs/Ost.AWT.nrrd"
 pre = "/home/evgeniy/Рабочий стол/Научная работа/Данные/Датасеты/Dataset001_LA_Wall/window_predictions/Ost.AWT.nrrd"
 
 
-def Dice(a, b):
-    return 2 * np.sum((a == 1) & (b == 1)) / (np.sum(a) + np.sum(b) + 1e-8)
-
-
-def bootstrap_ci(data1, data2, metric_func, n_boot=1000, alpha=0.05):
-    """Bootstrap confidence interval для разницы метрик"""
-    diffs = []
-    n = len(data1)
-    for _ in range(n_boot):
-        idx = np.random.choice(n, n, replace=True)
-        diffs.append(metric_func(data1[idx], data2[idx]))
-    ci_low = np.percentile(diffs, 100 * alpha / 2)
-    ci_high = np.percentile(diffs, 100 * (1 - alpha / 2))
-    return ci_low, ci_high
-
-
 if __name__ == "__main__":
-    print("=" * 70)
-    print("📊 ОТЧЁТ ПО ВАЛИДАЦИИ СЕГМЕНТАЦИИ И РЕГРЕССИИ ТОЛЩИНЫ")
-    print(f"Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 70)
 
     # Загрузка данных
     ref_imag = sitk.ReadImage(ref)
@@ -44,46 +26,53 @@ if __name__ == "__main__":
     ref_vals = ref_arr[area].ravel()
     pre_vals = pre_arr[area].ravel()
 
-    # Базовые статистики
-    print("\n📈 БАЗОВЫЕ СТАТИСТИКИ (в области перекрытия)")
-    print(f"Количество валидных вокселей: {len(ref_vals):,}")
-    print(
-        f"Референс:  mean={ref_vals.mean():.3f}, std={ref_vals.std():.3f}, min={ref_vals.min():.3f}, max={ref_vals.max():.3f}")
-    print(
-        f"Предсказание: mean={pre_vals.mean():.3f}, std={pre_vals.std():.3f}, min={pre_vals.min():.3f}, max={pre_vals.max():.3f}")
+    results = {}
+
+    results["Количество валидных вокселей"] = len(ref_vals)
+    results["Ручная разметка"]={
+        "mean": ref_vals.mean(),
+        "std": ref_vals.std(),
+        "min": ref_vals.min(),
+        "max": ref_vals.max()
+    }
+    results["Автоматическая разметка"]={
+        "mean": pre_vals.mean(),
+        "std": pre_vals.std(),
+        "min": pre_vals.min(),
+        "max": pre_vals.max()
+    }
 
     # Метрики корреляции
-    print("\n🔗 МЕТРИКИ КОРРЕЛЯЦИИ")
-    pearson_r, pearson_p = stats.pearsonr(ref_vals, pre_vals)
-    spearman_r, spearman_p = stats.spearmanr(ref_vals, pre_vals)
+    pearson_r, pearson_p_val = stats.pearsonr(ref_vals, pre_vals)
+    spearman_r, spearman_p_val = stats.spearmanr(ref_vals, pre_vals)
 
-    # Фехнер (вручную)
+    results["Pearson"] = {"Statistic": pearson_r, "P value": pearson_p_val}
+    results["Spearman"] = {"Statistic": spearman_r, "P value": spearman_p_val}
+
+    # Фехнер
     P = (ref_vals - ref_vals.mean()) * (pre_vals - pre_vals.mean())
     C, M = np.sum(P > 0), np.sum(P < 0)
-    fechner = (C - M) / (C + M) if (C + M) > 0 else 0
-
-    print(f"Пирсон (линейная):     r = {pearson_r:.4f}, p = {pearson_p:.2e}")
-    print(f"Спирмен (ранговая):    ρ = {spearman_r:.4f}, p = {spearman_p:.2e}")
-    print(f"Фехнер (знаковая):     K = {fechner:.4f}")
+    wf = (C - M) / (C + M) if (C + M) > 0 else 0
+    results["Weber-Fechner"] = wf
 
     # Метрики согласия (регрессия)
-    print("\n📏 МЕТРИКИ СОГЛАСИЯ (регрессия толщины)")
     diff = pre_vals - ref_vals
     mae = np.mean(np.abs(diff))
     rmse = np.sqrt(np.mean(diff ** 2))
     mbe = np.mean(diff)  # Mean Bias Error
     std_diff = np.std(diff)
 
-    print(f"MAE (средняя абсолютная ошибка):  {mae:.4f} мм")
-    print(f"RMSE (квадратичная ошибка):       {rmse:.4f} мм")
-    print(f"MBE (систематическое смещение):   {mbe:+.4f} мм")
-    print(f"Std разницы:                      {std_diff:.4f} мм")
+    results["MAE"]=mae
+    results["RMSE"]=rmse
+    results["MBE"]=mbe
+    results["Std"]=std_diff
 
     # Доверительные интервалы для MAE и смещения (bootstrap)
     mae_ci = bootstrap_ci(ref_vals, pre_vals, lambda r, p: np.mean(np.abs(p - r)))
     bias_ci = bootstrap_ci(ref_vals, pre_vals, lambda r, p: np.mean(p - r))
-    print(f"95% CI для MAE:  [{mae_ci[0]:.4f}, {mae_ci[1]:.4f}] мм")
-    print(f"95% CI для MBE:  [{bias_ci[0]:.4f}, {bias_ci[1]:.4f}] мм")
+    results["95% CI for MAE"] = mae_ci[0], mae_ci[1]
+    results["95% CI for MBE"] = bias_ci[0], bias_ci[1]
+    #TODO: отсюда и ниже - переделать
 
     # Статистические тесты различий
     print("\n🧪 СТАТИСТИЧЕСКИЕ ТЕСТЫ (проверка гипотезы: распределения идентичны)")
@@ -185,30 +174,7 @@ if __name__ == "__main__":
     iou = intersection / (union + 1e-8)
     print(f"\n🔲 Бинарный Dice: {binary_dice_score * 100:.2f} %, IoU: {iou * 100:.2f} %")
 
-    # Экспорт результатов
-    results = {
-        "timestamp": datetime.now().isoformat(),
-        "n_voxels": int(np.sum(area)),
-        "correlation": {
-            "pearson_r": float(pearson_r), "pearson_p": float(pearson_p),
-            "spearman_rho": float(spearman_r), "spearman_p": float(spearman_p),
-            "fechner_k": float(fechner)
-        },
-        "regression_metrics": {
-            "mae_mm": float(mae), "rmse_mm": float(rmse), "mbe_mm": float(mbe),
-            "mae_95ci": [float(x) for x in mae_ci], "mbe_95ci": [float(x) for x in bias_ci]
-        },
-        "statistical_tests": {
-            "shapiro_ref_p": float(norm_ref), "shapiro_pre_p": float(norm_pre),
-            "wilcoxon_p": float(wilcoxon_p), "ks_2samp_p": float(ks_p)
-        },
-        "effect_size": {"cohens_d": float(cohens_d)},
-        "bland_altman": {"mean_bias": float(mbe), "loa_95": [float(loa_lower), float(loa_upper)]},
-        "zone_dice": {k: float(v) for k, v in zone_dice.items()},
-        "binary_metrics": {"dice": float(binary_dice_score), "iou": float(iou)}
-    }
-
-    with open("validation_report.json", "w", encoding="utf-8") as f:
+    with open("../Данные/validation_report.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
     print(f"\n💾 Результаты сохранены в 'validation_report.json'")
 

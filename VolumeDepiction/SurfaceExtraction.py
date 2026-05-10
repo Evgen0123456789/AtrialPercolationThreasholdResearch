@@ -1,16 +1,8 @@
 import numpy as np
 from scipy import ndimage
 
-from WorkTools import print_volume
-
-def get_largest_domain(mask: np.ndarray):
-    labeled, num_features = ndimage.label(mask)
-    if num_features > 0:
-        component_sizes = np.bincount(labeled.ravel())
-        largest_component = np.argmax(component_sizes[1:]) + 1
-        return (labeled == largest_component).astype(np.uint8), num_features # Extract the biggest domain
-    return mask, num_features
-
+from Tools.LoggingTools import print_volume
+from Tools.WorkTools import get_largest_domain
 
 
 def extract_cavity(wall_mask:np.ndarray,

@@ -9,10 +9,12 @@ import skimage.measure
 
 from VolumeDepiction.ConvexHullIntersection import get_convex_hull_intersection
 from VolumeDepiction.GridTools import upscale_grid, create_field_and_interior_indices
-from VolumeDepiction.SurfaceExtraction import external_and_internal_surfaces, get_largest_domain
+from VolumeDepiction.SurfaceExtraction import external_and_internal_surfaces
 from WallThicknessTools.LaplasSolver import solve_laplace_interior
 from WallThicknessTools.PairedDEMethod import compute_wall_thickness_interior
-from WorkTools import print_volume, get_bounding_box, save_mask
+from Tools.WorkTools import get_bounding_box, get_largest_domain
+from Tools.SaveTools import save_mask
+from Tools.LoggingTools import print_volume
 
 
 def get_beta1(mask: np.ndarray):
