@@ -14,7 +14,7 @@ import SimpleITK as sitk
 def Dice(test: np.ndarray, pred: np.ndarray)->float:
     T = np.count_nonzero(test)
     P = np.count_nonzero(pred)
-    F = np.count_nonzero(test * pred)
+    F = np.count_nonzero(test & pred)
     return 2 * F / (T + P + 1e-8)
 
 
@@ -100,8 +100,8 @@ def review_samples(path: str):
 def IOU(a, b):
     a_bool = a.astype(bool)
     b_bool = b.astype(bool)
-    inter = np.sum(a_bool & b_bool)
-    union = np.sum(a_bool | b_bool)
+    inter = np.count_nonzero(a_bool & b_bool)
+    union = np.count_nonzero(a_bool | b_bool)
     return inter / (union + 1e-8)
 
 
