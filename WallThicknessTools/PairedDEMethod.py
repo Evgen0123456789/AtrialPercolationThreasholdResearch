@@ -12,9 +12,9 @@ from numba import jit, prange
 @jit(nopython=True, parallel=True, fastmath=True)
 def _solve_trajectory_pde_interior(
         distance: np.ndarray,
-        tx: np.ndarray,
-        ty: np.ndarray,
         tz: np.ndarray,
+        ty: np.ndarray,
+        tx: np.ndarray,
         indices: np.ndarray,
         spacing: Tuple[float, float, float],
         direction: int
@@ -24,36 +24,36 @@ def _solve_trajectory_pde_interior(
     Boundary nodes have D=0 (fixed), excluded from indices.
     """
     n = len(indices)
-    h_x, h_y, h_z = spacing
+    h_z, h_y, h_x = spacing
 
     for _ in range(50):
         for idx in prange(n):
             i, j, k = indices[idx, 0], indices[idx, 1], indices[idx, 2]
 
-            gx = tx[i, j, k]
-            gy = ty[i, j, k]
             gz = tz[i, j, k]
+            gy = ty[i, j, k]
+            gx = tx[i, j, k]
 
-            mag = sqrt(gx * gx + gy * gy + gz * gz)
+            mag = sqrt(gz * gz + gy * gy + gx * gx)
             if mag < 1e-10:
                 continue
 
-            tx_n = gx / mag
-            ty_n = gy / mag
             tz_n = gz / mag
+            ty_n = gy / mag
+            tx_n = gx / mag
 
             # Upwind scheme (Eq. 12-13 from paper)
-            d_x = distance[i - 1, j, k] if tx_n > 0 else distance[i + 1, j, k]
+            d_z = distance[i - 1, j, k] if tz_n > 0 else distance[i + 1, j, k]
             d_y = distance[i, j - 1, k] if ty_n > 0 else distance[i, j + 1, k]
-            d_z = distance[i, j, k - 1] if tz_n > 0 else distance[i, j, k + 1]
+            d_x = distance[i, j, k - 1] if tx_n > 0 else distance[i, j, k + 1]
 
-            abs_tx = abs(tx_n) / h_x
-            abs_ty = abs(ty_n) / h_y
             abs_tz = abs(tz_n) / h_z
+            abs_ty = abs(ty_n) / h_y
+            abs_tx = abs(tx_n) / h_x
 
-            denom = abs_tx + abs_ty + abs_tz
+            denom = abs_ty + abs_tz + abs_tx
 
-            numer = abs_tx * d_x + abs_ty * d_y + abs_tz * d_z
+            numer = abs_tz * d_z + abs_ty * d_y + abs_tx * d_x
             d_new = (numer + direction) / denom
 
             distance[i, j, k] = d_new
@@ -72,11 +72,11 @@ def compute_wall_thickness_interior(
     """
     print("  Computing trajectory functions (interior nodes only)...")
 
-    gx, gy, gz = grad
-    grad_mag = np.sqrt(gx ** 2 + gy ** 2 + gz ** 2) + 1e-10
-    tx = gx / grad_mag
-    ty = gy / grad_mag
+    gz, gy, gx = grad
+    grad_mag = np.sqrt(gz ** 2 + gy ** 2 + gx ** 2) + 1e-10
     tz = gz / grad_mag
+    ty = gy / grad_mag
+    tx = gx / grad_mag
 
     print(f"  {len(interior_indices)} interior nodes")
     print(f"  {len(episurface_indices)} epicardial nodes")
@@ -86,7 +86,7 @@ def compute_wall_thickness_interior(
     d_epi = np.zeros_like(tx, dtype=np.float64)
     _solve_trajectory_pde_interior(
         d_epi,
-        tx, ty, tz,
+        tz, ty, tx,
         np.vstack((interior_indices, endosurface_indices)),
         spacing, direction=1)
 
@@ -94,7 +94,7 @@ def compute_wall_thickness_interior(
     d_endo = np.zeros_like(tx, dtype=np.float64)
     _solve_trajectory_pde_interior(
         d_endo,
-        -tx, -ty, -tz,
+        -tz, -ty, -tx,
         np.vstack((interior_indices, episurface_indices)),
         spacing, direction=1)
 

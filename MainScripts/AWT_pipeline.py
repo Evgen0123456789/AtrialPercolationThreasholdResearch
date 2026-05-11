@@ -33,6 +33,7 @@ def process(path: str, name: str, out: str):
             wall_mask = (space > 0).astype(np.uint8)
             wall_mask, _ = get_largest_domain(wall_mask)
             original_spacing = heart.GetSpacing()
+            job_spacing = original_spacing[::-1]
             direction = heart.GetDirection()
             origin = heart.GetOrigin()
             original_shape = wall_mask.shape
@@ -54,8 +55,12 @@ def process(path: str, name: str, out: str):
     print("\n[1/7] Computing bounding box...")
     pad = 2 # Constant, may be more but now there are no reasons for it.
     bbox = get_bounding_box(wall_mask, pad)
-    (x0, x1), (y0, y1), (z0, z1) = bbox
-    reduced_wall_mask = wall_mask[x0:x1, y0:y1, z0:z1]
+    (z0, z1), (y0, y1), (x0, x1) = bbox
+    reduced_wall_mask = wall_mask[z0:z1, y0:y1, x0:x1]
+    new_origin = list(heart.GetOrigin())
+    new_origin[0] += z0 * original_spacing[0]  # Z
+    new_origin[1] += y0 * original_spacing[1]  # Y
+    new_origin[2] += x0 * original_spacing[2]  # X
     print(f"  Reduced shape: {reduced_wall_mask.shape}")
 
     print("\n[2/7] Building convex hull (intersection of 3 axes)...")
@@ -63,7 +68,7 @@ def process(path: str, name: str, out: str):
         reduced_wall_mask,
         n_jobs=multiprocessing.cpu_count()
     )
-    print_volume(convex_hull, original_spacing, "Convex Hull")
+    print_volume(convex_hull, job_spacing, "Convex Hull")
 
     print("\n[3/11] Extracting surfaces...")
     erosion_iters = 7   # There are now reasons for exactly 7, but for correct restoring the both should be equal.
@@ -83,7 +88,7 @@ def process(path: str, name: str, out: str):
     print(f"  Independent paths through the wall:  {get_beta1(wall_fine)}")
     epi_fine = upscale_grid(epi_coarse, factor=first_factor)
     endo_fine = upscale_grid(endo_coarse, factor=first_factor)
-    fine_spacing = tuple(s / first_factor for s in original_spacing)
+    fine_spacing = tuple(s / first_factor for s in job_spacing)
     del epi_coarse, endo_coarse, reduced_wall_mask, convex_hull
     gc.collect()
 
@@ -107,8 +112,7 @@ def process(path: str, name: str, out: str):
         max_iter=5000,
         tol=1e-6
     )
-    u_field[u_field == 0] = np.nan
-    save_mask(u_field, original_spacing, direction, origin, out, "Dirichlet_solution.nrrd")
+    save_mask(u_field, original_spacing, direction, new_origin, out, "Dirichlet_solution.nrrd")
     del u_field, epi_field, endo_field
     gc.collect()
 
@@ -120,9 +124,10 @@ def process(path: str, name: str, out: str):
         endosurface_indices,
         field_spacing
     )
-    save_mask(awt_field, original_spacing, direction, origin, out, "AWT.nrrd")
-    for k, v in stats.items():
-        print(k, ":", v[0], v[1])
+    save_mask(awt_field, original_spacing, direction, new_origin, out, "AWT.nrrd")
+    with open(os.path.join(out, "AWT_stats.txt"), 'w') as f:
+        for k, v in stats.items():
+            f.write(f"{k}: {v[0]} {v[1]}\n")
     del awt_field, grad_field, interior_indices, episurface_indices, endosurface_indices
     gc.collect()
 
@@ -149,5 +154,6 @@ if __name__ == '__main__':
         exit(1)
 
     for name in names:
+        print("Sample:", name)
         process(args.path, name, args.out)
         gc.collect()

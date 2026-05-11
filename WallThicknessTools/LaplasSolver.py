@@ -2,6 +2,7 @@ import time
 from typing import Tuple
 
 import numpy as np
+from numpy.typing import NDArray
 from numba import jit, prange
 
 
@@ -11,10 +12,10 @@ from numba import jit, prange
 
 @jit(nopython=True, parallel=True, fastmath=True)
 def _sor_step_interior(
-        u_curr: np.ndarray,
-        u_next: np.ndarray,
-        indices: np.ndarray,
-        w_x: float, w_y: float, w_z: float, w_sum: float,
+        u_curr: NDArray[float],
+        u_next: NDArray[float],
+        indices: NDArray[float],
+        w_z: float, w_y: float, w_x: float, w_sum: float,
         omega: float = 1.8
 ) -> float:
     """
@@ -26,9 +27,9 @@ def _sor_step_interior(
         i, j, k = indices[idx, 0], indices[idx, 1], indices[idx, 2]
 
         u_new = (
-                        w_x * (u_curr[i - 1, j, k] + u_curr[i + 1, j, k]) +
+                        w_z * (u_curr[i - 1, j, k] + u_curr[i + 1, j, k]) +
                         w_y * (u_curr[i, j - 1, k] + u_curr[i, j + 1, k]) +
-                        w_z * (u_curr[i, j, k - 1] + u_curr[i, j, k + 1])
+                        w_x * (u_curr[i, j, k - 1] + u_curr[i, j, k + 1])
                 ) / w_sum
 
         u_old = u_curr[i, j, k]
@@ -52,9 +53,9 @@ def solve_laplace_interior(
     """
 
     #region weights
-    dx, dy, dz = spacing
-    w_x, w_y, w_z = 1.0 / (dx ** 2), 1.0 / (dy ** 2), 1.0 / (dz ** 2)
-    w_sum = 2.0 * (w_x + w_y + w_z)
+    dz, dy, dx = spacing
+    w_z, w_y, w_x = 1.0 / (dz ** 2), 1.0 / (dx ** 2), 1.0 / (dy ** 2)
+    w_sum = 2.0 * (w_z + w_y + w_x)
     #endregion
 
     #region useful objects
@@ -68,7 +69,7 @@ def solve_laplace_interior(
     #endregion
 
     for it in range(max_iter):
-        residual = _sor_step_interior(u, u_next, interior_indices, w_x, w_y, w_z, w_sum, omega=0.9)
+        residual = _sor_step_interior(u, u_next, interior_indices, w_z, w_y, w_x, w_sum, omega=0.9)
         u, u_next = u_next, u
 
         #region verbose
@@ -82,6 +83,6 @@ def solve_laplace_interior(
                 print(f"[Converged] at iteration {it}")
             break
 
-    gx, gy, gz = np.gradient(u, dx, dy, dz)
+    gx, gy, gz = np.gradient(u, dz, dy, dx)
     stats = {'converged': converged, 'residual': residual, 'time': time.time() - start}
     return u, (gx, gy, gz), stats
