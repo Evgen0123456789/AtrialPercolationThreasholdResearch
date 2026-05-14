@@ -60,11 +60,7 @@ def external_and_internal_surfaces(wall_mask:np.ndarray,
 
     print(f"  Эпикард вне стенки: {np.count_nonzero(epicardial_surface & wall_mask) == 0}")
     print(f"  Эндокард вне стенки: {np.count_nonzero(endocardial_surface & wall_mask) == 0}")
-
-    # Проверка на пересечение
-    overlap = np.count_nonzero(epicardial_surface & endocardial_surface)
-    if overlap > 0:
-        print(f"<|====================|> WARNING: {overlap} вокселей перекрываются!")
+    print(f"  Их пересечений: {np.count_nonzero(endocardial_surface & epicardial_surface)} узлов")
 
     print_volume(epicardial_surface, dim, "of epicardium")
     print_volume(endocardial_surface, dim, "of endocardium")
@@ -74,6 +70,6 @@ def external_and_internal_surfaces(wall_mask:np.ndarray,
     print(f"  wall_mask: {np.count_nonzero(wall_mask)} вокселей")
     print(f"  cavity: {np.count_nonzero(cavity)} вокселей")
     print(f"  boundary_layer: {np.count_nonzero(boundary_layer)} вокселей")
-    print(f"  wall_mask * cavity: {np.count_nonzero(wall_mask & cavity)} (должно быть 0)")
+    print(f"  wall_mask * cavity: {np.count_nonzero(wall_mask & cavity)}")
 
     return endocardial_surface, epicardial_surface

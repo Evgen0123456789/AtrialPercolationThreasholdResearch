@@ -63,24 +63,22 @@ def create_field_and_interior_indices(
         factor: int = 2
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
-    Steps 7-8: Create Field and interior indices for PDE.
-
     Pipeline:
     1. Strip boundary layers from upscaled masks
     2. Downscale with 2×2×2 filter, stride 2
-    3. Field = interior wall voxels (not touching boundary)
+    3. Field = interior wall voxels
     4. Interior indices = nodes where PDE will be solved
     """
     print("[Grid] Creating field and interior indices...")
 
-    # Step 7: Strip external layers (remove boundary voxels)
+    # Strip external layers (remove boundary voxels)
     wall_stripped = strip_boundary_layers(wall_fine, layers=1)
     epi_stripped = strip_boundary_layers(epi_fine, layers=1)
     endo_stripped = strip_boundary_layers(endo_fine, layers=1)
 
     print(f"  Stripped shape: {wall_stripped.shape} (was {wall_fine.shape})")
 
-    # Step 8: Downscale with 2×2×2 filter, stride 2
+    # Downscale with 2×2×2 filter, stride 2
     # This creates nodes on faces/edges/vertices of original fine grid
     wall_field = downscale_with_stride(wall_stripped, block_size=factor, stride=factor)
     epi_field = downscale_with_stride(epi_stripped, block_size=factor, stride=factor)
@@ -90,7 +88,7 @@ def create_field_and_interior_indices(
 
     # Create interior indices (exclude boundary nodes)
     boundary_field = (epi_field > 0) | (endo_field > 0)
-    interior_mask = wall_field & (1 - boundary_field)
+    interior_mask = wall_field > boundary_field
     interior_indices = np.argwhere(interior_mask).astype(np.int32)
     episurface_indices = np.argwhere((epi_field > 0) & wall_field)
     endosurface_indices = np.argwhere((endo_field > 0) & wall_field)

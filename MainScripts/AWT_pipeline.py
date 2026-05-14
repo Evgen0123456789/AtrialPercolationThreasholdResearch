@@ -15,6 +15,7 @@ from WallThicknessTools.PairedDEMethod import compute_wall_thickness_interior
 from Tools.WorkTools import get_bounding_box, get_largest_domain
 from Tools.SaveTools import save_mask
 from Tools.LoggingTools import print_volume
+from Tools.PlotTools import plt_save_np_hist
 
 
 def get_beta1(mask: np.ndarray):
@@ -57,10 +58,10 @@ def process(path: str, name: str, out: str):
     bbox = get_bounding_box(wall_mask, pad)
     (z0, z1), (y0, y1), (x0, x1) = bbox
     reduced_wall_mask = wall_mask[z0:z1, y0:y1, x0:x1]
-    new_origin = list(heart.GetOrigin())
-    new_origin[0] += z0 * original_spacing[0]  # Z
+    new_origin = list(origin)
+    new_origin[0] += x0 * original_spacing[0]  # Z
     new_origin[1] += y0 * original_spacing[1]  # Y
-    new_origin[2] += x0 * original_spacing[2]  # X
+    new_origin[2] += z0 * original_spacing[2]  # X
     print(f"  Reduced shape: {reduced_wall_mask.shape}")
 
     print("\n[2/7] Building convex hull (intersection of 3 axes)...")
@@ -85,10 +86,10 @@ def process(path: str, name: str, out: str):
     first_factor = 4    # Divide every block onto 4 elements along each side.
     second_factor = 2  # Unite every 2 blocks along each side into one unit.
     wall_fine = upscale_grid(reduced_wall_mask, factor=first_factor)
-    print(f"  Independent paths through the wall:  {get_beta1(wall_fine)}")
     epi_fine = upscale_grid(epi_coarse, factor=first_factor)
     endo_fine = upscale_grid(endo_coarse, factor=first_factor)
     fine_spacing = tuple(s / first_factor for s in job_spacing)
+    print(f"  Independent paths through the wall:  {get_beta1(wall_fine)}")
     del epi_coarse, endo_coarse, reduced_wall_mask, convex_hull
     gc.collect()
 
@@ -112,8 +113,8 @@ def process(path: str, name: str, out: str):
         max_iter=5000,
         tol=1e-6
     )
-    save_mask(u_field, original_spacing, direction, new_origin, out, "Dirichlet_solution.nrrd")
-    del u_field, epi_field, endo_field
+    save_mask(u_field, field_spacing[::-1], direction, new_origin, out, "Dirichlet_solution.nrrd")
+    # del u_field, epi_field, endo_field
     gc.collect()
 
     print("\n[7/7] Computing wall thickness (Coupled PDE)...")
@@ -124,10 +125,16 @@ def process(path: str, name: str, out: str):
         endosurface_indices,
         field_spacing
     )
-    save_mask(awt_field, original_spacing, direction, new_origin, out, "AWT.nrrd")
+    print("AWT=0 in the wall cases:", np.count_nonzero(awt_field[interior_indices[:,0], interior_indices[:,1], interior_indices[:,2]]==0))
+
+    bins = np.linspace(0, 5, 16)
+    awt_hist, _ = np.histogram(awt_field[awt_field > 0], bins)
+    plt_save_np_hist(awt_hist, bins, name, "AWT, mm", "Count, log", os.path.join(out, "AWT_hist.png"))
+    save_mask(awt_field, field_spacing[::-1], direction, new_origin, out, "AWT.nrrd")
     with open(os.path.join(out, "AWT_stats.txt"), 'w') as f:
         for k, v in stats.items():
             f.write(f"{k}: {v[0]} {v[1]}\n")
+            print(f"{k}: {v[0]} {v[1]}")
     del awt_field, grad_field, interior_indices, episurface_indices, endosurface_indices
     gc.collect()
 
